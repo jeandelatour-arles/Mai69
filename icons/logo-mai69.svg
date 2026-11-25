@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <g id="club"><circle cx="0" cy="-12.5" r="10.5"/><circle cx="-11.5" cy="4.5" r="10.5"/><circle cx="11.5" cy="4.5" r="10.5"/><circle cx="0" cy="0" r="7"/><path d="M-2.5 0 Q-2 14 -9 21 H9 Q2 14 2.5 0z"/></g>
+    <path id="spade" d="M0 -24 C5 -13 23 -5 22 8 C21 18 8 19 2.5 11 Q3 17 9 22 H-9 Q-3 17 -2.5 11 C-8 19 -21 18 -22 8 C-23 -5 -5 -13 0 -24z"/>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#F7F1E7"/>
+  <g transform="translate(0 12)" fill="none" stroke="#5E0B1F" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="17">
+      <path d="M180 140 V84 L208 122 L236 84 V140"/>
+      <path d="M262 140 L286 84 L310 140 M270 122 H302"/>
+      <path d="M336 84 V140"/>
+    </g>
+    <g stroke-width="38">
+      <circle cx="170" cy="330" r="66"/>
+      <path d="M104 330 C104 236 148 194 222 190"/>
+      <circle cx="342" cy="250" r="66"/>
+      <path d="M408 250 C408 344 364 386 290 390"/>
+    </g>
+  </g>
+  <g fill="#111">
+    <use href="#club" transform="translate(170 343) scale(1.25)"/>
+    <use href="#spade" transform="translate(342 262) scale(1.25)"/>
+  </g>
+</svg>
