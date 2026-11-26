@@ -60,7 +60,8 @@ export function openSheet({ title = '', body = '', onClose, cls = '', headExtra 
     },
     setTitle(s) { el.querySelector('.head h2').textContent = s; },
   };
-  scrim.addEventListener('click', api.close);
+  const openedAt = performance.now();
+  scrim.addEventListener('click', () => { if (performance.now() - openedAt > 450) api.close(); });
   el.querySelector('.x').addEventListener('click', api.close);
   dragToClose(el, api.close);
   return api;

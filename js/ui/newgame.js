@@ -110,7 +110,7 @@ export function renderNewGame(root, { onCancel, onCreated }) {
 }
 
 /** Glisser-déposer pour réordonner (poignée). */
-function enableDrag(ul, arr, rerender) {
+export function enableDrag(ul, arr, rerender) {
   if (!ul) return;
   ul.querySelectorAll('.handle').forEach(h => {
     const li = h.closest('li');

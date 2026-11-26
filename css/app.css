@@ -15,7 +15,7 @@ html.eco {
   color-scheme: dark;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
 body {
   font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   overscroll-behavior: none; -webkit-user-select: none; user-select: none;
@@ -30,8 +30,14 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
 .c4 { color: var(--c4); } .c5 { color: var(--c5); } .c6 { color: var(--c6); }
 
 #app { max-width: 560px; margin: 0 auto; min-height: 100%; position: relative; }
-.screen { display: flex; flex-direction: column; height: 100dvh; padding-top: var(--safe-t); }
-.scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.screen {
+  position: fixed; top: 0; bottom: 0; left: 0; right: 0; max-width: 560px; margin: 0 auto;
+  display: flex; flex-direction: column; padding-top: var(--safe-t); overflow: hidden;
+}
+.screen > * { flex-shrink: 0; }
+.screen > .scroll { flex: 1 1 auto; min-height: 0; }
+.scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
 
 /* Barre du bas */
 .bar {
@@ -83,10 +89,17 @@ html.eco .logo-img { opacity: .92; }
 
 /* Bandeau, noms, totaux */
 .banner {
-  height: 22px; font-size: 11.5px; color: var(--muted); display: flex; align-items: center; justify-content: center;
-  letter-spacing: .02em; font-variant-numeric: tabular-nums; flex-shrink: 0;
+  position: relative; width: 100%; height: 34px; font-size: 13px; font-weight: 600; color: var(--accent);
+  display: flex; align-items: center; justify-content: center; padding: 0 44px;
+  letter-spacing: .01em; font-variant-numeric: tabular-nums; flex-shrink: 0;
+  background: linear-gradient(to bottom, var(--accent-soft), transparent);
+  border-bottom: 2px solid var(--accent);
 }
-.banner.over { color: var(--star); }
+.banner .bt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner .chev { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); }
+.banner .chev .ic { width: 18px; height: 18px; }
+.banner.over { color: var(--star); border-bottom-color: var(--star); }
 .grid { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
 .names { padding: 6px 4px 0; }
 .name {
@@ -96,12 +109,12 @@ html.eco .logo-img { opacity: .92; }
 .name .starter { display: block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin: 3px auto 0; opacity: 0; }
 .name.is-starter .starter { opacity: .9; }
 .totals { padding: 4px 4px 14px; border-bottom: 1px solid var(--line); }
-.total { text-align: center; font-size: clamp(24px, 8vw, 38px); font-weight: 700; font-variant-numeric: tabular-nums; position: relative; padding: 4px 0; }
+.total { width: 100%; min-height: 56px; text-align: center; font-size: clamp(24px, 8vw, 38px); font-weight: 700; font-variant-numeric: tabular-nums; position: relative; padding: 4px 0; }
 .star { color: var(--star); font-size: .5em; vertical-align: super; margin-left: 1px; line-height: 0; }
 .rounds { padding: 0 4px 24px; }
 .round { position: relative; overflow: hidden; }
 .round .inner { background: var(--bg); position: relative; z-index: 1; touch-action: pan-y; transition: transform .18s; }
-.cell { text-align: center; padding: 15px 0; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--text); }
+.cell { text-align: center; padding: 16px 0; min-height: 52px; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--text); }
 .cell.pen { font-weight: 600; }
 .round + .round .inner { border-top: 1px solid var(--line); }
 .round .under .ic { width: 22px; height: 22px; }
@@ -178,7 +191,18 @@ html.eco .logo-img { opacity: .92; }
 
 /* Saisie */
 .entry-name { font-size: 26px; font-weight: 700; text-align: center; margin: 8px 0 2px; }
-.entry-input { font-size: 40px; text-align: center; height: 76px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.entry-input {
+  font-size: 44px; text-align: center; height: 72px; line-height: 72px; font-weight: 700; font-variant-numeric: tabular-nums;
+  border-radius: 16px; background: var(--line); box-shadow: inset 0 0 0 2px var(--accent);
+}
+.entry-input.empty::after { content: "–"; color: var(--faint); font-weight: 400; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
+.keypad button { height: 58px; border-radius: 14px; background: var(--line); font-size: 26px; font-weight: 600; display: grid; place-items: center; }
+.keypad button:active { background: var(--accent-soft); }
+.keypad .ok { background: var(--accent); color: var(--accent-ink); }
+.keypad .ic { width: 28px; height: 28px; }
+.st { font-size: 12px; padding: 5px 10px; border-radius: 999px; color: var(--muted); background: var(--line); white-space: nowrap; }
+.st.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .steps { display: flex; justify-content: center; gap: 6px; margin: 4px 0 10px; }
 .steps i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); opacity: .5; }
 .steps i.on { background: var(--accent); opacity: 1; }

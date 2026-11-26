@@ -7,7 +7,7 @@ import { computeGame, activeAt, nextStarter, entryScore, EMPTY_HAND } from '../c
 import { progress, mostAdvanced } from '../core/endConditions.js';
 import { state, saveGame, displayName, createPlayer } from './state.js';
 import { openRules, askPlayerName, settingsRows, bindSettingsRows } from './panels.js';
-import { condEditor } from './newgame.js';
+import { condEditor, enableDrag } from './newgame.js';
 
 let session = null; // { game, start, tick, onVis }
 
@@ -16,6 +16,12 @@ const colorOf = (g, pid) => (g.participants.find(p => p.pid === pid) || {}).colo
 const orderedCurrent = g => {
   const cur = current(g).map(p => p.pid);
   return g.order.filter(pid => cur.includes(pid)).concat(cur.filter(pid => !g.order.includes(pid)));
+};
+/** Joueur qui commence la prochaine manche (choix manuel possible dans « Changer l'ordre »). */
+export const starterFor = g => {
+  const o = g.starterOverride;
+  if (o && o.at === g.rounds.length && g.order.includes(o.pid)) return o.pid;
+  return nextStarter(g.order, g.rounds);
 };
 const playedMs = g => g.playedMs + (session && session.game === g && session.start ? Date.now() - session.start : 0);
 
@@ -51,10 +57,10 @@ export function renderGame(root, game, { onHome }) {
   function render() {
     comp = computeGame(game);
     const ids = orderedCurrent(game);
-    const starter = nextStarter(game.order, game.rounds);
+    const starter = starterFor(game);
     screen.style.setProperty('--n', ids.length);
     screen.innerHTML = `
-      <button class="banner" aria-live="polite"></button>
+      <button class="banner" aria-live="polite"><span class="chev">${icon('down')}</span><span class="bt"></span></button>
       <div class="grid names">${ids.map(pid => `<button class="name c${colorOf(game, pid)} ${pid === starter ? 'is-starter' : ''}" data-pid="${pid}"
           title="${pid === starter ? esc(t.starterHint) : ''}">${esc(displayName(game, pid))}<span class="starter"></span></button>`).join('')}</div>
       <div class="grid totals">${ids.map(pid => `<button class="total" data-pid="${pid}">${comp.totals[pid] ?? 0}${comp.lastDetails[pid] ? '<span class="star">★</span>' : ''}</button>`).join('')}</div>
@@ -80,13 +86,11 @@ export function renderGame(root, game, { onHome }) {
 
     screen.querySelector('.banner').onclick = openConds;
     screen.querySelectorAll('.name').forEach(b => b.onclick = () => renameInGame(b.dataset.pid));
-    screen.querySelectorAll('.total').forEach(b => b.onclick = () => {
-      if (game.rounds.length && comp.lastDetails[b.dataset.pid]) openDetails(game.rounds.length - 1);
-    });
+    screen.querySelectorAll('.total').forEach(b => b.onclick = () => openHistory(b.dataset.pid));
     screen.querySelectorAll('.round').forEach(rowEl => {
       const r = Number(rowEl.dataset.r);
       gestures(rowEl, {
-        onTap: e => { const c = e.target.closest('.cell'); if (c && comp.rows[r].details[c.dataset.pid]) openDetails(r); else if (comp.rows[r] && Object.keys(comp.rows[r].details).length && c && c.querySelector('.star')) openDetails(r); },
+        onTap: () => { if (rowHasInfo(r)) openDetails(r); },
         onLeft: () => openEntry(r),
         onRight: () => deleteRound(r),
         onLongStart: () => roundMenu(r),
@@ -101,7 +105,7 @@ export function renderGame(root, game, { onHome }) {
 
   /* ---------- bandeau ---------- */
   function bannerText() {
-    if (!game.conds.length) return { text: '', over: false };
+    if (!game.conds.length) return { text: t.freeGame, over: false };
     const m = mostAdvanced(game.conds, ctx());
     if (!m) return { text: '', over: false };
     const left = Math.ceil(m.x - m.current);
@@ -120,7 +124,7 @@ export function renderGame(root, game, { onHome }) {
     const b = screen.querySelector('.banner');
     if (!b) return;
     const { text, over } = bannerText();
-    b.textContent = text;
+    b.querySelector('.bt').textContent = text;
     b.classList.toggle('over', over);
     // Notification unique à l'expiration du chrono
     const tc = game.conds.find(c => c.type === 'time');
@@ -136,13 +140,36 @@ export function renderGame(root, game, { onHome }) {
 
   function openConds() {
     const p = progress(game.conds, ctx());
-    if (!p.length) return;
     const fmt = c => c.type === 'time' ? `${Math.floor(c.current)} / ${c.x} min` : `${Math.round(c.current)} / ${c.x}`;
-    openSheet({
-      title: t.endRules,
-      body: `<ul class="list">${p.map(c => `<li class="li"><span class="grow">${esc(t.cond[c.type].label)}${c.type === 'one' && c.leader ? ` <span class="muted">(${esc(displayName(game, c.leader))})</span>` : ''}</span>
-        <span class="${c.reached ? '' : 'muted'}" style="font-variant-numeric:tabular-nums">${fmt(c)}</span></li>`).join('')}</ul>`,
-    });
+    const body = html(`<div>${p.length ? `<ul class="list">${p.map(c => `<li class="li"><span class="grow">${esc(t.cond[c.type].label)}${c.type === 'one' && c.leader ? ` <span class="muted">(${esc(displayName(game, c.leader))})</span>` : ''}</span>
+        <span class="${c.reached ? '' : 'muted'}" style="font-variant-numeric:tabular-nums">${fmt(c)}</span></li>`).join('')}</ul>` : `<p class="muted" style="margin:4px 0">${esc(t.freeGame)}</p>`}
+      <button class="btn edit">${icon('gear')}${esc(t.endConditionsEdit)}</button>
+      <button class="btn primary fin">${icon('flag')}${esc(t.endGameShort)}</button></div>`);
+    const s = openSheet({ title: t.endRules, body });
+    body.querySelector('.edit').onclick = () => { s.close(); openSettings(); };
+    body.querySelector('.fin').onclick = () => { s.close(); openEnd(); };
+  }
+
+  /* ---------- historique des ajustements d'un joueur ---------- */
+  function adjLines(r, pid) {
+    const row = comp.rows[r], round = game.rounds[r], lines = [];
+    if (!(pid in row.pts)) return lines;
+    if (round.raw[pid] != null && row.pts[pid] !== Number(round.raw[pid])) lines.push(t.penaltyNote);
+    for (const d of row.details[pid] || []) {
+      if (d.type === 'personal') lines.push(t.adjFrom(d.from, d.to, t.adjPersonal[d.rule]));
+      else lines.push(t.adjSwap(d.from, d.to, d.with.map(w => displayName(game, w)).join(', ')));
+    }
+    return lines;
+  }
+  const rowHasInfo = r => Object.keys(comp.rows[r].pts).some(pid => adjLines(r, pid).length);
+  function openHistory(pid) {
+    const items = [];
+    for (let r = game.rounds.length - 1; r >= 0; r--) {
+      const lines = adjLines(r, pid);
+      if (lines.length) items.push(`<div class="adj"><div class="who">${esc(t.roundActions(r + 1))}</div>${lines.map(l => `<div class="what">${esc(l)}</div>`).join('')}</div>`);
+    }
+    const s = openSheet({ title: displayName(game, pid), body: items.join('') || `<p class="muted">${esc(t.historyEmpty)}</p>` });
+    s.el.querySelector('.head h2').classList.add('c' + colorOf(game, pid));
   }
 
   /* ---------- noms ---------- */
@@ -165,15 +192,9 @@ export function renderGame(root, game, { onHome }) {
   /* ---------- détail des ajustements ---------- */
   function openDetails(r) {
     const row = comp.rows[r];
-    const round = game.rounds[r];
     const items = [];
     for (const pid of Object.keys(row.pts)) {
-      const lines = [];
-      if (round.raw[pid] != null && row.pts[pid] !== Number(round.raw[pid])) lines.push(t.penaltyNote);
-      for (const d of row.details[pid] || []) {
-        if (d.type === 'personal') lines.push(t.adjFrom(d.from, d.to, t.adjPersonal[d.rule]));
-        else lines.push(t.adjSwap(d.from, d.to, d.with.map(w => displayName(game, w)).join(', ')));
-      }
+      const lines = adjLines(r, pid);
       if (lines.length) items.push(`<div class="adj"><div class="who c${colorOf(game, pid)}">${esc(displayName(game, pid))}</div>${lines.map(l => `<div class="what">${esc(l)}</div>`).join('')}</div>`);
     }
     openSheet({ title: `${t.adjustTitle} · ${t.roundActions(r + 1)}`, body: items.join('') || `<p class="muted">—</p>` });
@@ -222,21 +243,23 @@ export function renderGame(root, game, { onHome }) {
       }
       const pid = ids[step - 1];
       const isStopper = data.stopper === pid;
-      body.innerHTML = `${dots()}<form autocomplete="off">
+      let val = data.raw[pid] != null ? String(data.raw[pid]) : '';
+      body.innerHTML = `${dots()}
         <div class="entry-name c${colorOf(game, pid)}">${esc(displayName(game, pid))}${isStopper ? ' <span class="muted" style="font-size:14px;font-weight:500">✋</span>' : ''}</div>
-        <p class="hint" style="text-align:center;margin:0 0 10px">${esc(t.rawHint)}</p>
-        <input class="field entry-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="${data.raw[pid] ?? ''}" aria-label="${esc(t.pointsOf)} ${esc(displayName(game, pid))}">
-        <div class="err"></div>
-        <div class="row2"><button type="button" class="btn ghost prev">${icon('back')}${esc(t.back)}</button><button class="btn primary">${esc(t.validate)}</button></div></form>`;
-      const form = body.querySelector('form'), input = form.querySelector('input'), err = form.querySelector('.err');
-      form.querySelector('.prev').onclick = () => { step--; draw(); };
-      form.onsubmit = async e => {
-        e.preventDefault();
-        const v = input.value.trim();
-        if (!/^\d{1,2}$/.test(v) || Number(v) > 50) { err.textContent = t.invalidPoints; input.select(); return; }
-        data.raw[pid] = Number(v);
+        <p class="hint" style="text-align:center;margin:0 0 8px">${esc(t.rawHint)}</p>
+        <div class="entry-input" role="textbox" aria-label="${esc(t.pointsOf)} ${esc(displayName(game, pid))}"></div>
+        <div class="err" style="text-align:center"></div>
+        <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-k="${n}">${n}</button>`).join('')}
+          <button data-k="del" aria-label="⌫">⌫</button><button data-k="0">0</button>
+          <button data-k="ok" class="ok" aria-label="${esc(t.validate)}">${icon('check')}</button></div>
+        <button class="btn ghost prev">${icon('back')}${esc(t.back)}</button>`;
+      const disp = body.querySelector('.entry-input'), err = body.querySelector('.err');
+      const show = () => { disp.textContent = val; disp.classList.toggle('empty', !val); };
+      show();
+      const submit = async () => {
+        if (!/^\d{1,2}$/.test(val) || Number(val) > 50) { err.textContent = t.invalidPoints; return; }
+        data.raw[pid] = Number(val);
         if (step < ids.length) { step++; draw(); return; }
-        // contrôles finaux
         if (data.stopper === EMPTY_HAND && !ids.some(id => data.raw[id] === 0)) { err.textContent = t.emptyNeedsZero; return; }
         if (data.stopper !== EMPTY_HAND && data.raw[data.stopper] > 5) {
           if (!(await confirmBox(t.stopperTooHigh(displayName(game, data.stopper))))) return;
@@ -246,17 +269,37 @@ export function renderGame(root, game, { onHome }) {
         if (editing) Object.assign(game.rounds[r], { stopper: data.stopper, raw });
         else {
           const at = new Date().toISOString();
-          game.rounds.push({ at, starter: nextStarter(game.order, game.rounds), stopper: data.stopper, raw });
+          game.rounds.push({ at, starter: starterFor(game), stopper: data.stopper, raw });
+          game.starterOverride = null;
           game.lastRoundAt = at;
         }
         saved = true;
+        document.removeEventListener('keydown', onKey);
         await saveGame(game);
         s.close();
         render();
         if (!editing) checkEnd();
       };
-      setTimeout(() => { input.focus(); input.select(); }, 60);
+      const press = k => {
+        err.textContent = '';
+        if (k === 'ok') return submit();
+        if (k === 'del') val = val.slice(0, -1);
+        else if (val.length < 2) val = val === '0' ? k : val + k;
+        show();
+      };
+      body.querySelectorAll('.keypad button').forEach(b => b.onclick = () => press(b.dataset.k));
+      body.querySelector('.prev').onclick = () => { step--; draw(); };
+      currentPress = press;
     };
+    let currentPress = null;
+    const onKey = e => {
+      if (!document.body.contains(body)) { document.removeEventListener('keydown', onKey); return; }
+      if (!currentPress || step === 0) return;
+      if (/^\d$/.test(e.key)) currentPress(e.key);
+      else if (e.key === 'Backspace') currentPress('del');
+      else if (e.key === 'Enter') currentPress('ok');
+    };
+    document.addEventListener('keydown', onKey);
     draw();
     return saved;
   }
@@ -338,12 +381,14 @@ export function renderGame(root, game, { onHome }) {
       body.append(condEditor(game.conds, async () => { game.dismissed = []; game.timeUpShown = false; await saveGame(game); updateBanner(); }));
       body.insertAdjacentHTML('beforeend', `<div class="section-t">${esc(t.players)}</div>
         <ul class="list"><li class="li tap add" style="color:var(--accent)">${icon('plus')}<span class="grow">${esc(t.addPlayer)}</span></li>
-        <li class="li tap rem">${icon('trash')}<span class="grow">${esc(t.removePlayer)}</span></li></ul>
+        <li class="li tap rem">${icon('trash')}<span class="grow">${esc(t.removePlayer)}</span></li>
+        <li class="li tap ord">${icon('grip')}<span class="grow">${esc(t.reorder)}</span></li></ul>
         <div class="section-t">${esc(t.settings)}</div>
         <div class="list"><div class="li tap noarch"><span class="grow wrap">${esc(t.noAutoArchive)}</span><span class="switch ${game.noAutoArchive ? 'on' : ''}"></span></div>
         ${settingsRows()}</div>`);
       body.querySelector('.add').onclick = addPlayerFlow;
       body.querySelector('.rem').onclick = removePlayerFlow;
+      body.querySelector('.ord').onclick = reorderFlow;
       body.querySelector('.noarch').onclick = async () => { game.noAutoArchive = !game.noAutoArchive; await saveGame(game); draw(); };
       bindSettingsRows(body, () => { s.close(); render(); });
     };
@@ -384,6 +429,30 @@ export function renderGame(root, game, { onHome }) {
       await saveGame(game);
       s.close(); render();
     });
+  }
+
+  function reorderFlow() {
+    const ids = orderedCurrent(game);
+    const body = html('<div></div>');
+    openSheet({ title: t.reorder, body });
+    const draw = () => {
+      const starter = starterFor(game);
+      body.innerHTML = `<p class="hint" style="margin-top:0">${esc(t.reorderHint)}</p>
+        <ul class="list order">${ids.map((id, i) => `<li class="li" data-id="${id}"><span class="swatch c${colorOf(game, id)}"></span>
+          <span class="grow">${i + 1}. ${esc(displayName(game, id))}</span>
+          <button class="st ${id === starter ? 'on' : ''}" data-id="${id}">${esc(id === starter ? t.starts : t.setStarter)}</button>
+          <span class="handle" aria-label="drag">${icon('grip')}</span></li>`).join('')}</ul>`;
+      body.querySelectorAll('.st').forEach(b => b.onclick = async () => {
+        game.starterOverride = { pid: b.dataset.id, at: game.rounds.length };
+        await saveGame(game); draw(); render();
+      });
+      enableDrag(body.querySelector('.order'), ids, async () => {
+        const others = game.order.filter(x => !ids.includes(x));
+        game.order = [...ids, ...others];
+        await saveGame(game); draw(); render();
+      });
+    };
+    draw();
   }
 
   function removePlayerFlow() {

@@ -5,7 +5,7 @@ const LONG_MS = 450, SWIPE_PX = 72, SLOP = 9;
 
 export function gestures(row, { onTap, onLeft, onRight, onLongStart, onLongEnd } = {}) {
   const inner = row.querySelector('.inner') || row;
-  let x0, y0, dx = 0, mode = null, timer = null, longFired = false, id = null;
+  let x0, y0, dx = 0, mode = null, timer = null, longFired = false, id = null, tapPending = false;
 
   const reset = () => { clearTimeout(timer); timer = null; inner.style.transform = ''; mode = null; id = null; };
 
@@ -46,10 +46,11 @@ export function gestures(row, { onTap, onLeft, onRight, onLongStart, onLongEnd }
     else if (m === 'swipe') {
       if (dx <= -SWIPE_PX && onLeft) onLeft();
       else if (dx >= SWIPE_PX && onRight) onRight();
-    } else if (m === 'press' && e.type === 'pointerup' && !longFired) { onTap && onTap(e); }
+    } else if (m === 'press' && e.type === 'pointerup' && !longFired) { tapPending = true; }
     reset();
   };
   inner.addEventListener('pointerup', end);
   inner.addEventListener('pointercancel', end);
+  inner.addEventListener('click', e => { if (tapPending) { tapPending = false; onTap && onTap(e); } });
   inner.addEventListener('contextmenu', e => e.preventDefault());
 }

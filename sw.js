@@ -1,5 +1,5 @@
 // Mai 69 — service worker : tout en cache, aucune requête réseau ensuite.
-const VERSION = 'mai69-v1';
+const VERSION = 'mai69-v2';
 const FILES = [
   './',
   "./css/app.css",
